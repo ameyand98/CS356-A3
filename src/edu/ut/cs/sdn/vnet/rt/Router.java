@@ -96,12 +96,56 @@ public class Router extends Device
 		
 		/********************************************************************/
 	}
+
+	private Ethernet getICMPTimeExceededMsg(Ethernet etherPacket, Iface inIface, byte[] srcMAC) {
+		IPv4 packet = (IPv4) etherPacket.getPayload();
+
+		// create icmp packet 
+		Ethernet ether  = new Ethernet();
+		IPv4 ip = new  IPv4();
+		ICMP icmp = new ICMP();
+		Data data = new Data();
+		ether.setPayload(ip);
+		ip.setPayload(icmp);
+		icmp.setPayload(data);
+
+		// icmp header
+		icmp.setIcmpType((byte)11);
+		icmp.setIcmpCode((byte)0);
+
+		byte[] ipBytes = packet.serialize();
+		int numBytes = packet.getHeaderLength() * 4 + 8;
+
+		// padding 
+		byte[] icmpBytes = new byte[4 + numBytes];
+
+		for (int i = 0; i < numBytes; i++) {
+			icmpBytes[i + 4] = ipBytes[i];
+		}
+		data.setData(icmpBytes);
+
+		// ip header
+		ip.setTtl((byte) 64);
+		ip.setProtocol(IPv4.PROTOCOL_ICMP);
+		ip.setSourceAddress(inIface.getIpAddress());
+		ip.setDestinationAddress(packet.getSourceAddress());
+
+		// mac header
+		ether.setEtherType(Ethernet.TYPE_IPv4);
+		ether.setSourceMACAddress(inIface.getMacAddress().toBytes());
+
+		// dest mac to previous hop 
+		ether.setDestinationMACAddress(srcMAC);
+		return ether;
+	} 
 	
 	private void handleIpPacket(Ethernet etherPacket, Iface inIface)
 	{
 		// Make sure it's an IP packet
 		if (etherPacket.getEtherType() != Ethernet.TYPE_IPv4)
 		{ return; }
+
+		byte[] srcMAC = etherPacket.getSourceMACAddress();
 		
 		// Get IP header
 		IPv4 ipPacket = (IPv4)etherPacket.getPayload();
@@ -118,8 +162,15 @@ public class Router extends Device
         
         // Check TTL
         ipPacket.setTtl((byte)(ipPacket.getTtl()-1));
-        if (0 == ipPacket.getTtl())
-        { return; }
+        if (0 == ipPacket.getTtl()) { 
+			// send icmp time exceeded message
+			Ethernet ethernet = null;
+			ethernet = getICMPTimeExceededMsg(etherPacket, inIface, srcMAC);
+			if (ethernet != null) {
+				sendPacket(ethernet, inIface);
+			}
+			return; 
+		}
         
         // Reset checksum now that TTL is decremented
         ipPacket.resetChecksum();
