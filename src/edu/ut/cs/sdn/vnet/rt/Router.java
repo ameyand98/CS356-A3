@@ -97,7 +97,9 @@ public class Router extends Device
 		/********************************************************************/
 	}
 
-	private Ethernet getICMPTimeExceededMsg(Ethernet etherPacket, Iface inIface, byte[] srcMAC) {
+	// creates an ICMP time exceeded message by default. You can change the type of icmp message  
+	// by changing the header of this message
+	private Ethernet getGenericICMPMsg(Ethernet etherPacket, Iface inIface, byte[] srcMAC) {
 		IPv4 packet = (IPv4) etherPacket.getPayload();
 
 		// create icmp packet 
@@ -164,11 +166,13 @@ public class Router extends Device
         ipPacket.setTtl((byte)(ipPacket.getTtl()-1));
         if (0 == ipPacket.getTtl()) { 
 			// send icmp time exceeded message
-			Ethernet ethernet = null;
-			ethernet = getICMPTimeExceededMsg(etherPacket, inIface, srcMAC);
-			if (ethernet != null) {
-				sendPacket(ethernet, inIface);
-			}
+			System.out.println("ttl is 0, sending icmp time exceeded");
+			// Ethernet ethernet = null;
+			// ethernet = getGenericICMPMsg(etherPacket, inIface, srcMAC);
+			// if (ethernet != null) {
+			// 	sendPacket(ethernet, inIface);
+			// }
+			sendICMPMsg((byte)11, (byte)0, inIface, srcMAC, etherPacket);
 			return; 
 		}
         
@@ -178,15 +182,49 @@ public class Router extends Device
         // Check if packet is destined for one of router's interfaces
         for (Iface iface : this.interfaces.values())
         {
-        	if (ipPacket.getDestinationAddress() == iface.getIpAddress())
-        	{ return; }
+        	if (ipPacket.getDestinationAddress() == iface.getIpAddress()) { 
+				Ethernet ether = getGenericICMPMsg(etherPacket, inIface, srcMAC);
+				ICMP icmp = (ICMP) ether.getPayload().getPayload();
+
+				
+				if (ipPacket.getProtocol() == IPv4.PROTOCOL_TCP || ipPacket.getProtocol() == IPv4.PROTOCOL_UDP) {
+					// send destination port unreachable icmp message
+					icmp.setIcmpType((byte)3);
+					icmp.setIcmpCode((byte)3);
+					sendPacket(ether, inIface);
+				} else if (ipPacket.getProtocol() == IPv4.PROTOCOL_ICMP) {
+					// send echo icmp message
+					ICMP echo = (ICMP) ipPacket.getPayload();
+					if (echo.getIcmpType() == 8) {
+						IPv4 ipv4 = (IPv4) ether.getPayload();
+						ipv4.setSourceAddress(ipPacket.getDestinationAddress());
+						icmp.setIcmpType((byte)0);
+						// icmp.setIcmpCode((byte)0);
+						icmp.setPayload(echo.getPayload());
+						sendPacket(ether, inIface);
+					}
+				}
+				return; 
+			
+			}
         }
 		
         // Do route lookup and forward
-        this.forwardIpPacket(etherPacket, inIface);
+        this.forwardIpPacket(etherPacket, inIface, srcMAC);
 	}
 
-    private void forwardIpPacket(Ethernet etherPacket, Iface inIface)
+	private void sendICMPMsg(byte type, byte code, Iface inIface, byte[] srcMAC, Ethernet etherPacket) {
+		Ethernet ethernet = null;
+		ethernet = getGenericICMPMsg(etherPacket, inIface, srcMAC);
+		if (ethernet != null) {
+			ICMP icmp = (ICMP) ethernet.getPayload().getPayload();
+			icmp.setIcmpType(type);
+			icmp.setIcmpCode(code);
+			sendPacket(ethernet, inIface);
+		}
+	}
+
+    private void forwardIpPacket(Ethernet etherPacket, Iface inIface, byte[] srcMAC)
     {
         // Make sure it's an IP packet
 		if (etherPacket.getEtherType() != Ethernet.TYPE_IPv4)
@@ -201,8 +239,11 @@ public class Router extends Device
         RouteEntry bestMatch = this.routeTable.lookup(dstAddr);
 
         // If no entry matched, do nothing
-        if (null == bestMatch)
-        { return; }
+        if (null == bestMatch) { 
+			System.out.println("No route table entry found, sending dest net unreachable");
+			sendICMPMsg((byte)3, (byte)0, inIface, srcMAC, etherPacket);
+			return; 
+		}
 
         // Make sure we don't sent a packet back out the interface it came in
         Iface outIface = bestMatch.getInterface();
