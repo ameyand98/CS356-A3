@@ -90,6 +90,7 @@ public class Main
 				((Router)dev).loadRouteTable(routeTableFile); 
 			} else {
 				//Enable RIP and Init Route table
+				System.out.println("RIP Enabled");
 				((Router)dev).initRouteTable();
 			}
 			

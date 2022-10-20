@@ -76,7 +76,7 @@ public class Router extends Device
 			//Add router's interfaces & assume dist = 0 (neighbor nodes)
 			int maskIp = iface.getSubnetMask(); 
 			int dstIp = iface.getIpAddress() & maskIp;
-			this.routeTable.insert(dstIp, 0, maskIp, iface, routeTable);
+			this.routeTable.insert(dstIp, 0, maskIp, iface, 0, routeTable);
 		}
 
 		for (Iface iface: this.interfaces.values()) {
