@@ -86,7 +86,7 @@ public class Router extends Device
 
 		//Create timer/timer task
 		this.RIPTimer = new Timer();
-		RIPTimer.scheduleAtFixedRate(this.getUpdateTask(), 0, 10000);
+		RIPTimer.scheduleAtFixedRate(this.getUpdateTask(), 0, 10000); // timertask, delay, interval
 	}
 	
 	/**
@@ -207,7 +207,6 @@ public class Router extends Device
 		
 		rip.setCommand(isRequest ? RIPv2.COMMAND_REQUEST : RIPv2.COMMAND_RESPONSE);
 
-
 		//Build RIP Packet w/ route table
 		for(RouteEntry curEntry: this.routeTable.getEntries()) {
 			RIPv2Entry ripEntry = new RIPv2Entry(curEntry.getDestinationAddress(), curEntry.getMaskAddress(), curEntry.getDistance());
@@ -215,7 +214,7 @@ public class Router extends Device
 			rip.addEntry(ripEntry);
 		}
 
-		System.out.println(rip.toString());
+		System.out.println("Sending RIP PACKET: " + rip.toString() + " DEST: " + IPv4.fromIPv4Address(ip.getDestinationAddress()));
 
 		ether.serialize();
 		sendPacket(ether, inIface);
@@ -309,7 +308,7 @@ public class Router extends Device
 		return ether;
 	} 
 
-	private void handleRIPPacket(IPv4 ipPacket, Iface inIface, byte[] macAddress) {
+	private boolean handleRIPPacket(IPv4 ipPacket, Iface inIface, byte[] macAddress) {
 		if(ipPacket.getDestinationAddress() == inIface.getIpAddress() || ipPacket.getDestinationAddress() == IPv4.toIPv4Address(MULTICAST)) {
 			if(ipPacket.getProtocol() == IPv4.PROTOCOL_UDP) {
 				UDP udp = (UDP) ipPacket.getPayload();
@@ -335,9 +334,18 @@ public class Router extends Device
 
 								RouteEntry tgtEntry = this.routeTable.lookup(address);
 								if (tgtEntry == null || tgtEntry.getDistance() > distance) {
-									System.out.println("Update Distance");
+									System.out.println("------------------------------------------------------------------------------------------");
+									System.out.println("Updated Distance for " + tgtEntry.toString() + " with the following " + ripEntry.toString());
 									//Either entry not in router or needs to be updated (just insert again)
+									System.out.println("BEFORE UPDATE: ");
+									System.out.println(this.routeTable.toString());
 									this.routeTable.insert(address, nextHop, subnetMask, inIface, distance, routeTable);
+									System.out.println("DURING UPDATE: ");
+									System.out.println(this.routeTable.toString());
+									this.routeTable.remove(address, subnetMask);
+									System.out.println("AFTER UPDATE: ");
+									System.out.println(this.routeTable.toString());
+									System.out.println("------------------------------------------------------------------------------------------");
 									for (Iface iface : this.interfaces.values()) {
 										//NOT Required but this should propogate updates to route table
 										this.sendRIPPacket(inIface, !IS_RIP_REQUEST, IS_UNSOLICITED, -1, null);
@@ -347,12 +355,14 @@ public class Router extends Device
 							break;
 						default:
 							System.out.println("INVALID RIP COMMAND");
-							// assert(false);
+							break;
 					}
+					return true;
 				}
 			}
 		}
 		System.out.println(this.routeTable.toString());
+		return false;
 	}
 	
 	private void handleIpPacket(Ethernet etherPacket, Iface inIface)
@@ -368,8 +378,9 @@ public class Router extends Device
         System.out.println("Handle IP packet");
 
 		if (RIPEnabled) {
-			handleRIPPacket(ipPacket, inIface, etherPacket.getSourceMACAddress());
-			return;
+			if (handleRIPPacket(ipPacket, inIface, etherPacket.getSourceMACAddress())) {
+				return;
+			}
 		}
 
         // Verify checksum
