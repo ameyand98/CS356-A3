@@ -335,7 +335,7 @@ public class Router extends Device
 								RouteEntry tgtEntry = this.routeTable.lookup(address);
 								if (tgtEntry == null || tgtEntry.getDistance() > distance) {
 									System.out.println("------------------------------------------------------------------------------------------");
-									System.out.println("Updated Distance for " + tgtEntry.toString() + " with the following " + ripEntry.toString());
+									// System.out.println("Updated Distance for " + tgtEntry.toString() + " with the following " + ripEntry.toString());
 									//Either entry not in router or needs to be updated (just insert again)
 									System.out.println("BEFORE UPDATE: ");
 									System.out.println(this.routeTable.toString());
