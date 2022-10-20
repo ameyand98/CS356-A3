@@ -76,7 +76,7 @@ public class Router extends Device
 			//Add router's interfaces & assume dist = 0 (neighbor nodes)
 			int maskIp = iface.getSubnetMask(); 
 			int dstIp = iface.getIpAddress() & maskIp;
-			this.routeTable.insert(dstIp, 0, maskIp, iface);
+			this.routeTable.insert(dstIp, 0, maskIp, iface, routeTable);
 		}
 
 		for (Iface iface: this.interfaces.values()) {
@@ -86,7 +86,7 @@ public class Router extends Device
 
 		//Create timer/timer task
 		this.RIPTimer = new Timer();
-		RIPTimer.scheduleAtFixedRate(this.getUpdateTask(), 0, 10000);
+		RIPTimer.scheduleAtFixedRate(this.getUpdateTask(), 10000, 10000);
 	}
 	
 	/**
@@ -332,7 +332,7 @@ public class Router extends Device
 								RouteEntry tgtEntry = this.routeTable.lookup(address);
 								if (tgtEntry == null || tgtEntry.getDistance() > distance) {
 									//Either entry not in router or needs to be updated (just insert again)
-									this.routeTable.insert(address, nextHop, subnetMask, inIface, distance);
+									this.routeTable.insert(address, nextHop, subnetMask, inIface, distance, routeTable);
 									for (Iface iface : this.interfaces.values()) {
 										//NOT Required but this should propogate updates to route table
 										this.sendRIPPacket(inIface, !IS_RIP_REQUEST, IS_UNSOLICITED, -1, null);
@@ -363,6 +363,7 @@ public class Router extends Device
 
 		if (RIPEnabled) {
 			handleRIPPacket(ipPacket, inIface, etherPacket.getSourceMACAddress());
+			return;
 		}
 
         // Verify checksum

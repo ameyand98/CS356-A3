@@ -180,10 +180,11 @@ public class RouteTable
 	 * @param iface router interface out which to send packets to reach the 
 	 *        destination or gateway
 	 * @param distance distance/cost btn router interface and dstIp
+	 * @param curTable the RouteTable this entry resides in
 	 */
-	public void insert(int dstIp, int gwIp, int maskIp, Iface iface, int distance)
+	public void insert(int dstIp, int gwIp, int maskIp, Iface iface, int distance, RouteTable curTable)
 	{
-		RouteEntry entry = new RouteEntry(dstIp, gwIp, maskIp, iface, distance);
+		RouteEntry entry = new RouteEntry(dstIp, gwIp, maskIp, iface, distance, curTable);
         synchronized(this.entries)
         { 
             this.entries.add(entry);
