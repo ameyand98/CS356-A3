@@ -19,13 +19,13 @@ public class ArpRequester implements Runnable {
 	private Ethernet arpReply;
 
 	public ArpRequester(Ethernet arpReq, Iface arpReqIface, Router router) {
-		this.arpReq=arpReq;
-		this.arpReqIface=arpReqIface;
-		this.router=router;
-		finished=false;		
-		waitingPackets=new LinkedList<Ethernet>();
-		waitingIfaces=new LinkedList<Iface>();
-		waitingSrcMacs=new LinkedList<byte[]>();
+		this.arpReq = arpReq;
+		this.arpReqIface = arpReqIface;
+		this.router = router;
+		finished = false;		
+		waitingPackets = new LinkedList<Ethernet>();
+		waitingIfaces = new LinkedList<Iface>();
+		waitingSrcMacs = new LinkedList<byte[]>();
 	}
 
     public boolean isFinished() {

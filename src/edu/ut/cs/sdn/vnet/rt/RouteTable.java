@@ -27,6 +27,10 @@ public class RouteTable
 	 */
 	public RouteTable()
 	{ this.entries = new LinkedList<RouteEntry>(); }
+
+	public List<RouteEntry> getEntries() {
+		return this.entries;
+	}
 	
 	/**
 	 * Lookup the route entry that matches a given IP address.
@@ -167,6 +171,28 @@ public class RouteTable
             this.entries.add(entry);
         }
 	}
+
+	/**
+	 * Add an entry to the route table.
+	 * @param dstIp destination IP
+	 * @param gwIp gateway IP
+	 * @param maskIp subnet mask
+	 * @param iface router interface out which to send packets to reach the 
+	 *        destination or gateway
+	 * @param distance distance/cost btn router interface and dstIp
+	 */
+	public void insert(int dstIp, int gwIp, int maskIp, Iface iface, int distance)
+	{
+		RouteEntry entry = new RouteEntry(dstIp, gwIp, maskIp, iface, distance);
+        synchronized(this.entries)
+        { 
+            this.entries.add(entry);
+			if (entry.getGatewayAddress() != 0) {
+				//Non-Neighbor RouteEntry seen -> start timer for expiration
+				entry.beginTimer();
+			}
+        }
+	}
 	
 	/**
 	 * Remove an entry from the route table.
@@ -204,6 +230,40 @@ public class RouteTable
             { return false; }
             entry.setGatewayAddress(gwIp);
             entry.setInterface(iface);
+			if (entry.getGatewayAddress() != 0) {
+				//Non-Neighbor RouteEntry seen again -> reset
+				entry.resetTimer();
+			}
+        }
+        return true;
+	}
+
+	/**
+	 * Update an entry in the route table.
+	 * @param dstIP destination IP of the entry to update
+     * @param maskIp subnet mask of the entry to update
+	 * @param gatewayAddress new gateway IP address for matching entry
+	 * @param iface new router interface for matching entry
+	 * @param distance the distance from the iface to the destination/gateway IP
+     * @return true if a matching entry was found and updated, otherwise false
+	 */
+	public boolean update(int dstIp, int maskIp, int gwIp, 
+            Iface iface, int distance)
+	{
+		
+        synchronized(this.entries)
+        {
+            RouteEntry entry = this.find(dstIp, maskIp);
+            if (null == entry)
+            { return false; }
+            entry.setGatewayAddress(gwIp);
+            entry.setInterface(iface);
+			if (entry.getGatewayAddress() != 0) {
+				//Non-Neighbor RouteEntry seen again -> reset
+				entry.resetTimer();
+			}
+			entry.setDistance(distance);
+			
         }
         return true;
 	}

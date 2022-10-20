@@ -3,16 +3,34 @@ package edu.wisc.cs.sdn.vnet.rt;
 import edu.wisc.cs.sdn.vnet.Device;
 import edu.wisc.cs.sdn.vnet.DumpFile;
 import edu.wisc.cs.sdn.vnet.Iface;
-import java.util.*;
+import java.util.*; //Timer and TimerTask
 
-import net.floodlightcontroller.packet.Ethernet;
-import net.floodlightcontroller.packet.IPv4;
+import net.floodlightcontroller.packet.*; 
+//IPv4, ICMP, Ethernet, ARP, UDP, RIPv2, RIPv2Entry, MACAddress
 
 /**
  * @author Aaron Gember-Jacobson and Anubhavnidhi Abhashkumar
  */
 public class Router extends Device
 {	
+
+	/** Constants for sendRIPPacket */
+
+	//RIP Requests
+	private static final boolean IS_RIP_REQUEST = true;
+	//RIP Responses
+	private static final int	 IS_SOLICITED = 1;
+	private static final int	 IS_UNSOLICITED = 0;
+	private static final int 	 NOT_RIP_RESPONSE = -1;
+
+	//IP Multicast String
+	private static final String MULTICAST = "224.0.0.9";
+	//MAC Broadcast String
+	private static final String BROADCAST = "FF:FF:FF:FF:FF:FF";
+
+
+
+
 	/** Routing table for the router */
 	private RouteTable routeTable;
 	
@@ -21,6 +39,10 @@ public class Router extends Device
 
 	// reuester threads for IPs
 	private ConcurrentHashMap<Integer, ARPRequester> requesterThreads= new ConcurrentHashMap<Integer, ARPRequester>();
+
+	private boolean RIPEnabled;
+
+	private Timer RIPTimer;
 	
 	/**
 	 * Creates a router for a specific host.
@@ -38,6 +60,30 @@ public class Router extends Device
 	 */
 	public RouteTable getRouteTable()
 	{ return this.routeTable; }
+
+	/**
+	 * Init Route Table and Send Init RIP Packets
+	 */
+	public void initRouteTable() {
+		this.RIPEnabled = true;
+		
+		// assert(this.interfaces.values() != null);
+		for (Iface iface: this.interfaces.values()) {
+			//Add router's interfaces & assume dist = 0 (neighbor nodes)
+			int maskIp = iface.getSubnetMask(); 
+			int dstIp = iface.getIpAddress() & maskIp;
+			this.routeTable.insert(dstIp, 0, maskIp, iface);
+		}
+
+		for (Iface iface: this.interfaces.values()) {
+			//Add router's interfaces & assume dist = 0 (neighbor nodes)
+			this.sendRIPPacket(iface, isRequest, NOT_RIP_RESPONSE, -1, null);
+		}
+
+		//Create timer/timer task
+		this.RIPTimer = new Timer();
+		RIPTimer.scheduleFixedRate(this.getUpdateTask(), 0, 10000);
+	}
 	
 	/**
 	 * Load a new routing table from a file.
@@ -56,6 +102,9 @@ public class Router extends Device
 		System.out.println("-------------------------------------------------");
 		System.out.print(this.routeTable.toString());
 		System.out.println("-------------------------------------------------");
+
+		//Static Routing Table successfully loaded -> RIP not enabled
+		this.RIPEnabled = false;
 	}
 	
 	/**
@@ -103,6 +152,81 @@ public class Router extends Device
 		/********************************************************************/
 	}
 
+	/**
+	 * Configure RIP Packet accordingly and send
+	 * @param inIface the interface on which the packet was received
+	 * @param isRequest determines if RIP Request/Response is being sent
+	 * @param responseType determines if RIP unsolicited/solicited response is being sent
+	 * @param ipAddress ip of iface sending RIP request (RIP solicited is being sent)
+	 * @param macAddress mac of iface sending RIP request (RIP solicited is being sent)
+	 */
+	public void sendRIPPacket(IFace inIface, boolean isRequest, int responseType, int ipAddress, byte[] macAddress) {
+		// assert((isRequest && responseType == NOT_RIP_RESPONSE) || (!isRequest && ((responseType == IS_SOLICITED && macAddress != null) || responseType == IS_UNSOLICITED)));
+
+		//Build base RIP Packet
+		Ethernet ether = new Ethernet();
+		IPv4 ip = new IPv4();
+		RIPv2 rip = new RIPv2();
+		UDP udp = new UDP();
+
+		udp.setPayload(rip);
+		ip.setPayload(udp);
+		ether.setPayload(ip);
+
+		//Configure type, src/dst MAC address
+		ether.setEtherType(Ethernet.TYPE_IPv4);
+		ether.setSourceMACAddress(inIface.getMacAddress().toBytes());
+		if (isRequest || (!isRequest && responseType == IS_UNSOLICITED)) {
+			//RIP Unsolicited Response or RIP Request Packet -> MAC Address == Broadcast
+			ether.setDestinationAddress(BROADCAST);
+		} else {
+			//RIP solicited Response -> MAC Address == outIFace Address from Request
+			// assert(!isRequest && responseType == IS_SOLICITED && macAddress != null);
+			ether.setDestinationAddress(macAddress);
+		}
+
+		//Configure TTL, Protocol, src/dst address (IPv4)
+		ip.setTtl((byte) 15);
+		ip.setProtocol(IPv4.PROTOCOL_UDP);
+		ip.setSourceAddress(inIface.getIpAddress());
+		if (isRequest || (!isRequest && responseType == IS_UNSOLICITED)) {
+			//RIP Unsolicited Response or RIP Request Packet -> Dst Address == Multicast
+			ip.setDestinationAddress(IPv4.toIPv4Address(MULTICAST));
+		} else {
+			//RIP solicited Response -> MAC Address == outIFace Address from Request
+			// assert(!isRequest && responseType == IS_SOLICITED && macAddress != null);
+			ip.setDestinationAddress(ipAddress);
+		}
+
+		udp.setSourcePort(UDP.RIP_PORT);
+		udp.setDestinationPort(UDP.RIP_PORT);
+		
+		rip.setCommand(isRequest ? RIPv2.COMMAND_REQUEST : RIPv2.COMMAND_RESPONSE);
+
+
+		//Build RIP Packet w/ route table
+		for(RouteEntry curEntry: this.routeTable.getEntries()) {
+			RIPv2Entry ripEntry = new RIPv2Entry(curEntry.getDestinationAddress(), curEntry.getMaskAddress(), curEntry.getDistance());
+			ripEntry.setNextHopAddress(inIface.getIpAddress());
+			rip.addEntry(ripEntry);
+		}
+
+		ether.serialize();
+		sendPacket(ether, inIface);
+	}
+
+	private TimerTask getUpdateTask() {
+		TimerTask curTask = new TimerTask() {
+			public void run() {
+				for(Iface iface: this.interfaces.values()) {
+					this.sendRIPPacket(iface, !IS_RIP_REQUEST, IS_UNSOLICITED, -1, null);
+				}
+			}
+			
+		};
+		return curTask;
+	}
+
 	// creates an ICMP time exceeded message by default. You can change the type of icmp message  
 	// by changing the header of this message
 	private Ethernet getGenericICMPMsg(Ethernet etherPacket, Iface inIface, byte[] srcMAC) {
@@ -146,6 +270,48 @@ public class Router extends Device
 		ether.setDestinationMACAddress(srcMAC);
 		return ether;
 	} 
+
+	private void handleRIPPacket(IPv4 ipPacket, Iface inIface, byte[] macAddress) {
+		if(ipPacket.getDestinationAddress() == inIface.getIpAddress() || ipPacket.getDestinationAddress() == IPv4.toIPv4Address(MULTICAST)) {
+			if(ipPacket.getProtocol() == IPv4.PROTOCOL_UDP) {
+				UDP udp = (UDP) ipPacket.getPayload();
+				if (udp.getDestinationAddress() == UDP.RIP_PORT) {
+					RIPv2 rip = (RIPv2) udp.getPayload();
+					switch (rip.getCommand()) {
+						case  RIPv2.COMMAND_REQUEST:
+							//RIP Request received -> send RIP Solicited Response
+							this.sendRIPPacket(inIface, !IS_RIP_REQUEST, IS_SOLICITED, ipPacket.getSourceAddress(), macAddress);
+							break;
+						case  RIPv2.COMMAND_RESPONSE:
+							//RIP Response received -> potentially reduce distances
+							boolean RIPUpdated = false;
+							for(RIPv2 ripEntry: rip.getEntries()) {
+								int address = ripEntry.getAddress();
+								int subnetMask = ripEntry.getSubnetMask();
+								int distance = ripEntry.getMetric() + 1;
+								int nextHop = ripEntry.getNextHopAddress();
+
+								ripEntry.setMetric(distance);
+
+								RouteEntry tgtEntry = this.routeTable.lookup(address);
+								if (tgtEntry == null || tgtEntry.getDistance() > distance) {
+									//Either entry not in router or needs to be updated (just insert again)
+									this.routeTable.insert(address, nextHop, subnetMask, inIface, distance);
+									for (Iface iface : this.interfaces.values()) {
+										//NOT Required but this should propogate updates to route table
+										this.sendRIPPacket(inIface, !IS_RIP_REQUEST, IS_UNSOLICITED, -1, null);
+									}
+								}
+							}
+							break;
+						default:
+							System.out.println("INVALID RIP COMMAND");
+							// assert(false);
+					}
+				}
+			}
+		}
+	}
 	
 	private void handleIpPacket(Ethernet etherPacket, Iface inIface)
 	{
@@ -158,6 +324,10 @@ public class Router extends Device
 		// Get IP header
 		IPv4 ipPacket = (IPv4)etherPacket.getPayload();
         System.out.println("Handle IP packet");
+
+		if (RIPEnabled) {
+			handleRIPPacket(ipPacket, inIface, etherPacket.getSourceMACAddress());
+		}
 
         // Verify checksum
         short origCksum = ipPacket.getChecksum();
