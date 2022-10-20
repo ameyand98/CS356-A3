@@ -38,7 +38,7 @@ public class Router extends Device
 	private ArpCache arpCache;
 
 	// reuester threads for IPs
-	private ConcurrentHashMap<Integer, ARPRequester> requesterThreads= new ConcurrentHashMap<Integer, ARPRequester>();
+	private ConcurrentHashMap<Integer, ArpRequester> requesterThreads= new ConcurrentHashMap<Integer, ArpRequester>();
 
 	private boolean RIPEnabled;
 
@@ -545,7 +545,7 @@ public class Router extends Device
 			} else {
 				System.out.println("Handling ARP reply");
 				if (arpCache.lookup(senderIp) == null) {
-					ARPRequester requestThread = requesterThreads.get(senderIp);
+					ArpRequester requestThread = requesterThreads.get(senderIp);
 					if (requestThread == null) {
 						return;
 					}
