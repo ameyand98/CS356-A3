@@ -95,10 +95,15 @@ public class RouteEntry
 		
 	}
 
+
+	private void entryExpired() {
+		curTable.remove(this.getDestinationAddress(), this.getMaskAddress());
+	}
+	
 	private TimerTask getTask() {
-		curTask = new TimerTask() {
+		TimerTask curTask = new TimerTask() {
 			public void run() {
-				curTable.remove(this.getDestinationAddress(), this.getMaskAddress());
+				entryExpired();
 			}
 		};
 		return curTask;

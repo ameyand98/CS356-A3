@@ -4,6 +4,9 @@ import edu.ut.cs.sdn.vnet.Device;
 import edu.ut.cs.sdn.vnet.DumpFile;
 import edu.ut.cs.sdn.vnet.Iface;
 import java.util.*; //Timer and TimerTask
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.*;
 import java.nio.*;
 
 import net.floodlightcontroller.packet.*; 
@@ -78,12 +81,12 @@ public class Router extends Device
 
 		for (Iface iface: this.interfaces.values()) {
 			//Add router's interfaces & assume dist = 0 (neighbor nodes)
-			this.sendRIPPacket(iface, isRequest, NOT_RIP_RESPONSE, -1, null);
+			this.sendRIPPacket(iface, IS_RIP_REQUEST, NOT_RIP_RESPONSE, -1, null);
 		}
 
 		//Create timer/timer task
 		this.RIPTimer = new Timer();
-		RIPTimer.scheduleFixedRate(this.getUpdateTask(), 0, 10000);
+		RIPTimer.scheduleAtFixedRate(this.getUpdateTask(), 0, 10000);
 	}
 	
 	/**
@@ -161,7 +164,7 @@ public class Router extends Device
 	 * @param ipAddress ip of iface sending RIP request (RIP solicited is being sent)
 	 * @param macAddress mac of iface sending RIP request (RIP solicited is being sent)
 	 */
-	public void sendRIPPacket(IFace inIface, boolean isRequest, int responseType, int ipAddress, byte[] macAddress) {
+	public void sendRIPPacket(Iface inIface, boolean isRequest, int responseType, int ipAddress, byte[] macAddress) {
 		// assert((isRequest && responseType == NOT_RIP_RESPONSE) || (!isRequest && ((responseType == IS_SOLICITED && macAddress != null) || responseType == IS_UNSOLICITED)));
 
 		//Build base RIP Packet
@@ -179,11 +182,11 @@ public class Router extends Device
 		ether.setSourceMACAddress(inIface.getMacAddress().toBytes());
 		if (isRequest || (!isRequest && responseType == IS_UNSOLICITED)) {
 			//RIP Unsolicited Response or RIP Request Packet -> MAC Address == Broadcast
-			ether.setDestinationAddress(BROADCAST);
+			ether.setDestinationMACAddress(BROADCAST);
 		} else {
 			//RIP solicited Response -> MAC Address == outIFace Address from Request
 			// assert(!isRequest && responseType == IS_SOLICITED && macAddress != null);
-			ether.setDestinationAddress(macAddress);
+			ether.setDestinationMACAddress(macAddress);
 		}
 
 		//Configure TTL, Protocol, src/dst address (IPv4)
@@ -216,14 +219,17 @@ public class Router extends Device
 		sendPacket(ether, inIface);
 	}
 
+	private void autoSendRIP() {
+		for(Iface iface: this.interfaces.values()) {
+			this.sendRIPPacket(iface, !IS_RIP_REQUEST, IS_UNSOLICITED, -1, null);
+		}
+	}
+
 	private TimerTask getUpdateTask() {
 		TimerTask curTask = new TimerTask() {
 			public void run() {
-				for(Iface iface: this.interfaces.values()) {
-					this.sendRIPPacket(iface, !IS_RIP_REQUEST, IS_UNSOLICITED, -1, null);
-				}
+				autoSendRIP();
 			}
-			
 		};
 		return curTask;
 	}
@@ -276,7 +282,7 @@ public class Router extends Device
 		if(ipPacket.getDestinationAddress() == inIface.getIpAddress() || ipPacket.getDestinationAddress() == IPv4.toIPv4Address(MULTICAST)) {
 			if(ipPacket.getProtocol() == IPv4.PROTOCOL_UDP) {
 				UDP udp = (UDP) ipPacket.getPayload();
-				if (udp.getDestinationAddress() == UDP.RIP_PORT) {
+				if (udp.getDestinationPort() == UDP.RIP_PORT) {
 					RIPv2 rip = (RIPv2) udp.getPayload();
 					switch (rip.getCommand()) {
 						case  RIPv2.COMMAND_REQUEST:
@@ -286,7 +292,7 @@ public class Router extends Device
 						case  RIPv2.COMMAND_RESPONSE:
 							//RIP Response received -> potentially reduce distances
 							boolean RIPUpdated = false;
-							for(RIPv2 ripEntry: rip.getEntries()) {
+							for(RIPv2Entry ripEntry: rip.getEntries()) {
 								int address = ripEntry.getAddress();
 								int subnetMask = ripEntry.getSubnetMask();
 								int distance = ripEntry.getMetric() + 1;
