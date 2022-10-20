@@ -185,7 +185,7 @@ public class Router extends Device
 			ether.setDestinationMACAddress(BROADCAST);
 		} else {
 			//RIP solicited Response -> MAC Address == outIFace Address from Request
-			// assert(!isRequest && responseType == IS_SOLICITED && macAddress != null);
+			assert(!isRequest && responseType == IS_SOLICITED && macAddress != null);
 			ether.setDestinationMACAddress(macAddress);
 		}
 
@@ -198,7 +198,7 @@ public class Router extends Device
 			ip.setDestinationAddress(IPv4.toIPv4Address(MULTICAST));
 		} else {
 			//RIP solicited Response -> MAC Address == outIFace Address from Request
-			// assert(!isRequest && responseType == IS_SOLICITED && macAddress != null);
+			assert(!isRequest && responseType == IS_SOLICITED && ipAddress != -1);
 			ip.setDestinationAddress(ipAddress);
 		}
 
@@ -214,6 +214,8 @@ public class Router extends Device
 			ripEntry.setNextHopAddress(inIface.getIpAddress());
 			rip.addEntry(ripEntry);
 		}
+		
+		System.out.println(rip.toString());
 
 		ether.serialize();
 		sendPacket(ether, inIface);
@@ -316,9 +318,11 @@ public class Router extends Device
 					switch (rip.getCommand()) {
 						case  RIPv2.COMMAND_REQUEST:
 							//RIP Request received -> send RIP Solicited Response
+							System.out.println("RIP Request Received");
 							this.sendRIPPacket(inIface, !IS_RIP_REQUEST, IS_SOLICITED, ipPacket.getSourceAddress(), macAddress);
 							break;
 						case  RIPv2.COMMAND_RESPONSE:
+							System.out.println("RIP Response Received");
 							//RIP Response received -> potentially reduce distances
 							boolean RIPUpdated = false;
 							for(RIPv2Entry ripEntry: rip.getEntries()) {
@@ -331,6 +335,7 @@ public class Router extends Device
 
 								RouteEntry tgtEntry = this.routeTable.lookup(address);
 								if (tgtEntry == null || tgtEntry.getDistance() > distance) {
+									System.out.println("Update Distance");
 									//Either entry not in router or needs to be updated (just insert again)
 									this.routeTable.insert(address, nextHop, subnetMask, inIface, distance, routeTable);
 									for (Iface iface : this.interfaces.values()) {
@@ -347,6 +352,7 @@ public class Router extends Device
 				}
 			}
 		}
+		System.out.println(this.routeTable.toString());
 	}
 	
 	private void handleIpPacket(Ethernet etherPacket, Iface inIface)
