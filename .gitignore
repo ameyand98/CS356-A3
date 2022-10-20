@@ -3,6 +3,7 @@ bin
 *.egg-info
 *.pyo
 *.pyc
+*.tgz
 ip_config
 arp_cache
 rtable.*

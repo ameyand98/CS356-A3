@@ -275,11 +275,12 @@ public class Router extends Device
 
 		// dest mac to previous hop 
 		RouteEntry bestMatch = this.routeTable.lookup(packet.getSourceAddress());
-		if (bestMatch == null) return;
+		if (bestMatch == null) return null;
 
 		int nextHop = bestMatch.getGatewayAddress();
         if (0 == nextHop)
         { nextHop = packet.getSourceAddress(); }
+
 		ArpEntry arpEntry = this.arpCache.lookup(nextHop);
         if (null == arpEntry) { 
 			if (requesterThreads.containsKey(nextHop) && !requesterThreads.get(nextHop).isFinished()) {
@@ -295,7 +296,7 @@ public class Router extends Device
 				thread.start();
 
 			}
-			return; 
+			return null; 
 		}
 		if (arpEntry.getMac() != null) {
 			ether.setDestinationMACAddress(arpEntry.getMac().toBytes());
@@ -395,7 +396,12 @@ public class Router extends Device
         {
         	if (ipPacket.getDestinationAddress() == iface.getIpAddress()) { 
 				Ethernet ether = getGenericICMPMsg(etherPacket, inIface, srcMAC);
-				ICMP icmp = (ICMP) ether.getPayload().getPayload();
+				ICMP icmp;
+				if (ether != null) {
+					icmp = (ICMP) ether.getPayload().getPayload();
+				} else {
+					return;
+				}
 
 				
 				if (ipPacket.getProtocol() == IPv4.PROTOCOL_TCP || ipPacket.getProtocol() == IPv4.PROTOCOL_UDP) {
