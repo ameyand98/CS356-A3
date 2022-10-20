@@ -229,7 +229,7 @@ public class Router extends Device
 
 	// creates an ICMP time exceeded message by default. You can change the type of icmp message  
 	// by changing the header of this message
-	private Ethernet getGenericICMPMsg(Ethernet etherPacket, Iface inIface, byte[] srcMAC) {
+	public Ethernet getGenericICMPMsg(Ethernet etherPacket, Iface inIface, byte[] srcMAC) {
 		IPv4 packet = (IPv4) etherPacket.getPayload();
 
 		// create icmp packet 
