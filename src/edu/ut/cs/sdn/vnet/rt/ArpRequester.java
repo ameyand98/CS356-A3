@@ -51,7 +51,7 @@ public class ArpRequester implements Runnable {
 			try {
 				Thread.sleep(1000);
 			} catch (InterruptedException e) {
-				e.printStackTrace();
+				System.out.println("error waiting for one second while sending arp req");
 			}
 			reqCt++;
 			if(finished){
