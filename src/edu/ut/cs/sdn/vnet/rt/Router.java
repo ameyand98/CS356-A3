@@ -266,9 +266,26 @@ public class Router extends Device
 
         // Set destination MAC address in Ethernet header
         ArpEntry arpEntry = this.arpCache.lookup(nextHop);
-        if (null == arpEntry)
-        { return; }
-        etherPacket.setDestinationMACAddress(arpEntry.getMac().toBytes());
+        if (null == arpEntry) { 
+			if (requesterThreads.containsKey(nextHop) && !requesterThreads.get(nextHop).isFinished()) {
+				requesterThreads.get(nextHop).addPacketToQueue(etherPacket, inIface, srcMAC);
+			} else {
+				Ethernet arpReq = generateArpReq(etherPacket, bestMatch.getInterface());
+				ArpRequester newReq = new ArpRequester(arpReq, bestMatch.getInterface(), this);
+				newReq.addPacketToQueue(etherPacket, inIface, srcMAC);
+
+				requesterThreads.put(nextHop, newReq);
+
+				Thread thread = new Thread(newReq);
+				thread.start();
+
+			}
+			return; 
+		}
+		if (arpEntry.getMac() != null) {
+			etherPacket.setDestinationMACAddress(arpEntry.getMac().toBytes());
+		}
+        
         
         this.sendPacket(etherPacket, outIface);
     }
@@ -304,6 +321,43 @@ public class Router extends Device
 		
 	}
 
+	private Ethernet generateArpReq(Ethernet etherPacket, Iface outIface) {
+		IPv4 ipPacket = (IPv4) etherPacket.getPayload();
+
+		byte [] broadcast= { (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff };
+		byte [] targetHWAddress={0,0,0,0,0,0};
+
+		Ethernet ether = new Ethernet();
+		ARP arpReq = new ARP();
+
+		ether.setEtherType(Ethernet.TYPE_ARP);
+		ether.setSourceMACAddress(outIface.getMacAddress().toBytes());
+		ether.setDestinationMACAddress(broadcast);
+
+		arpReq.setHardwareType(ARP.HW_TYPE_ETHERNET);
+		arpReq.setProtocolType(ARP.PROTO_TYPE_IP);
+		arpReq.setHardwareAddressLength((byte)(Ethernet.DATALAYER_ADDRESS_LENGTH));
+		arpReq.setProtocolAddressLength((byte)4);
+		
+		arpReq.setOpCode(ARP.OP_REQUEST);
+		arpReq.setSenderHardwareAddress(outIface.getMacAddress().toBytes());
+		arpReq.setSenderProtocolAddress(IPv4.toIPv4AddressBytes(outIface.getIpAddress()));
+		arpReq.setTargetHardwareAddress(targetHWAddress);
+
+		int nextHop = 0;
+		RouteEntry entry = routeTable.lookup(ipPacket.getDestinationAddress());
+		if (entry.getGatewayAddress() == 0) {
+			nextHop = ipPacket.getDestinationAddress();
+		} else {
+			nextHop = entry.getGatewayAddress();
+		}
+
+		arpReq.setTargetProtocolAddress(nextHop);
+		ether.setPayload(arpReq);
+		return ether;
+
+	}
+
 	private void handleARPPacket(Ethernet etherPacket, Iface inIface) {
 		if (etherPacket.getEtherType() != Ethernet.TYPE_ARP)
 		{ return; }
@@ -334,7 +388,6 @@ public class Router extends Device
 					requesterThreads.remove(senderIp);
 				}
 			}
-
 
 		} else {
 			return;
