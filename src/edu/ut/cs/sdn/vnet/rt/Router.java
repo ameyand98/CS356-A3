@@ -274,7 +274,35 @@ public class Router extends Device
 		ether.setSourceMACAddress(inIface.getMacAddress().toBytes());
 
 		// dest mac to previous hop 
-		ether.setDestinationMACAddress(srcMAC);
+		RouteEntry bestMatch = this.routeTable.lookup(packet.getSourceAddress());
+		if (bestMatch == null) return;
+
+		int nextHop = bestMatch.getGatewayAddress();
+        if (0 == nextHop)
+        { nextHop = packet.getSourceAddress(); }
+		ArpEntry arpEntry = this.arpCache.lookup(nextHop);
+        if (null == arpEntry) { 
+			if (requesterThreads.containsKey(nextHop) && !requesterThreads.get(nextHop).isFinished()) {
+				requesterThreads.get(nextHop).addPacketToQueue(etherPacket, inIface, srcMAC);
+			} else {
+				Ethernet arpReq = generateArpReq(etherPacket, bestMatch.getInterface());
+				ArpRequester newReq = new ArpRequester(arpReq, bestMatch.getInterface(), this);
+				newReq.addPacketToQueue(etherPacket, inIface, srcMAC);
+
+				requesterThreads.put(nextHop, newReq);
+
+				Thread thread = new Thread(newReq);
+				thread.start();
+
+			}
+			return; 
+		}
+		if (arpEntry.getMac() != null) {
+			ether.setDestinationMACAddress(arpEntry.getMac().toBytes());
+		}
+
+		// ether.setDestinationMACAddress(srcMAC);
+
 		return ether;
 	} 
 
