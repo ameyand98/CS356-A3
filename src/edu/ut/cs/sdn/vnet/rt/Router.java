@@ -86,7 +86,7 @@ public class Router extends Device
 
 		//Create timer/timer task
 		this.RIPTimer = new Timer();
-		RIPTimer.scheduleAtFixedRate(this.getUpdateTask(), 10000, 10000);
+		RIPTimer.scheduleAtFixedRate(this.getUpdateTask(), 0, 10000);
 	}
 	
 	/**
@@ -214,7 +214,7 @@ public class Router extends Device
 			ripEntry.setNextHopAddress(inIface.getIpAddress());
 			rip.addEntry(ripEntry);
 		}
-		
+
 		System.out.println(rip.toString());
 
 		ether.serialize();
