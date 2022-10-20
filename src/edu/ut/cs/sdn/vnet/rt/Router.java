@@ -339,10 +339,12 @@ public class Router extends Device
 									//Either entry not in router or needs to be updated (just insert again)
 									System.out.println("BEFORE UPDATE: ");
 									System.out.println(this.routeTable.toString());
-									this.routeTable.insert(address, nextHop, subnetMask, inIface, distance, routeTable);
+									if (tgtEntry != null) {
+										this.routeTable.remove(address, subnetMask);
+									}
 									System.out.println("DURING UPDATE: ");
 									System.out.println(this.routeTable.toString());
-									this.routeTable.remove(address, subnetMask);
+									this.routeTable.insert(address, nextHop, subnetMask, inIface, distance, routeTable);
 									System.out.println("AFTER UPDATE: ");
 									System.out.println(this.routeTable.toString());
 									System.out.println("------------------------------------------------------------------------------------------");
